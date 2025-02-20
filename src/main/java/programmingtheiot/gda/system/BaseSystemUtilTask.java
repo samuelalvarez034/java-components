@@ -19,7 +19,7 @@ public abstract class BaseSystemUtilTask
 {
 	// static
 	
-     static final Logger _Logger =
+    private static final Logger _Logger =
 		Logger.getLogger(BaseSystemUtilTask.class.getName());
 	
 	

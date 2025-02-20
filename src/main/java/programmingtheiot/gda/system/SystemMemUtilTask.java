@@ -21,6 +21,9 @@ import programmingtheiot.common.ConfigConst;
  */
 public class SystemMemUtilTask extends BaseSystemUtilTask
 {
+
+	private static final Logger _Logger =Logger.getLogger(SystemMemUtilTask.class.getName());
+
 	// constructors
 	
 	/**

@@ -41,7 +41,7 @@ public class DeviceDataManager implements IDataMessageListener
 	
 	private static final Logger _Logger =
 		Logger.getLogger(DeviceDataManager.class.getName());
-	
+		
 	// private var's
 	
 	private boolean enableMqttClient = true;

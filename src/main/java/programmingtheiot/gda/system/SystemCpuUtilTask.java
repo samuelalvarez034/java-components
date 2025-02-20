@@ -42,7 +42,7 @@ public class SystemCpuUtilTask extends BaseSystemUtilTask
 	{
 		OperatingSystemMXBean mxBean = ManagementFactory.getOperatingSystemMXBean();
 		double cpuUtil = mxBean.getSystemLoadAverage();
-	
+		
 		return (float) cpuUtil;
 	}
 	

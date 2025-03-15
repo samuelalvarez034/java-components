@@ -70,7 +70,7 @@ public class SystemStateDataTest
 	 * 
 	 */
 	
-//	@Test
+	@Test
 	public void testDefaultValues()
 	{
 		SystemStateData ssd = new SystemStateData();
@@ -80,7 +80,7 @@ public class SystemStateDataTest
 		assertTrue(ssd.getCommand() == ConfigConst.DEFAULT_COMMAND);
 	}
 	
-//	@Test
+	@Test
 	public void testParameterUpdates()
 	{
 		SystemStateData ssd = createTestData();
@@ -104,7 +104,7 @@ public class SystemStateDataTest
 		}
 	}
 	
-//	@Test
+	@Test
 	public void testFullUpdate()
 	{
 		SystemStateData ssd = new SystemStateData();
@@ -158,5 +158,4 @@ public class SystemStateDataTest
 		
 		return ssd;
 	}
-	
 }

@@ -109,8 +109,7 @@ public class DeviceDataManager implements IDataMessageListener
 		if (data != null) {
 			_Logger.info("Handling actuator response: " + data.getName());
 	
-			// this next call is optional for now
-			//this.handleIncomingDataAnalysis(resourceName, data);
+			this.handleIncomingDataAnalysis(resourceName, data);
 	
 			if (data.hasError()) {
 				_Logger.warning("Error flag set for ActuatorData instance.");
@@ -175,6 +174,13 @@ public class DeviceDataManager implements IDataMessageListener
 	
 	public void setActuatorDataListener(String name, IActuatorDataListener listener)
 	{
+		// ... other logic ...
+		if (listener !=null) {
+			// for now, just ignore 'name' - if you need more than one listener,
+			// you can use 'name' to create a map of listener instances
+			this.actuatorDataListener =listener;
+		}
+
 	}
 	
 	public void startManager()
@@ -207,6 +213,14 @@ public class DeviceDataManager implements IDataMessageListener
 		if (this.sysPerfMgr != null) {
 			this.sysPerfMgr.startManager();
 		}
+
+		if (this.enableCoapServer && this.coapServer != null) {
+			if (this.coapServer.startServer()) {
+				_Logger.info("CoAP server started.");
+			} else {
+				_Logger.severe("Failed to start CoAP server. Check log file for details.");
+			}
+		}
 	}
 	
 	public void stopManager()
@@ -236,6 +250,14 @@ public class DeviceDataManager implements IDataMessageListener
 				_Logger.severe("Failed to disconnect MQTT client from broker.");
 	
 				// TODO: take appropriate action
+			}
+		}
+
+		if (this.enableCoapServer && this.coapServer != null) {
+			if (this.coapServer.stopServer()) {
+				_Logger.info("CoAP server stopped.");
+			} else {
+				_Logger.severe("Failed to stop CoAP server. Check log file for details.");
 			}
 		}
 	}
@@ -272,10 +294,6 @@ public class DeviceDataManager implements IDataMessageListener
 		this.mqttClient.setDataMessageListener(this);
 	}
 
-	if (this.enableCoapServer) {
-		// TODO: implement this in Lab Module 8
-	}
-
 	if (this.enableCloudClient) {
 		// TODO: implement this in Lab Module 10
 	}
@@ -283,5 +301,22 @@ public class DeviceDataManager implements IDataMessageListener
 	if (this.enablePersistenceClient) {
 		// TODO: implement this as an optional exercise in Lab Module 5
 	}
-}
+
+	if (this.enableCoapServer) {
+		this.coapServer = new CoapServerGateway(this);
+	}
+	}
+
+	private void handleIncomingDataAnalysis(ResourceNameEnum resource, ActuatorData data)
+	{
+		_Logger.info("Analyzing incoming actuator data: " +data.getName());
+
+		if (data.isResponseFlagEnabled()) {
+			// TODO: implement this
+		}else {
+			if (this.actuatorDataListener !=null) {
+				this.actuatorDataListener.onActuatorDataUpdate(data);
+			}
+		}
+	}
 }

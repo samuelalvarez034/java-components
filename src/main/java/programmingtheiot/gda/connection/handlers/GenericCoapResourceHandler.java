@@ -33,7 +33,6 @@ public class GenericCoapResourceHandler extends CoapResource
 	
 	// params
 	
-	
 	// constructors
 	
 	/**

@@ -107,7 +107,7 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended
 				_Logger.warning("Ya está conectado al broker: " + this.brokerAddr);
 			}
 		} catch (MqttException e) {
-			_Logger.log(Level.SEVERE, "Error al conectar el cliente MQTT", e);
+			_Logger.log(Level.SEVERE, "Error al intentar conectar el cliente MQTT", e);
 		}
 		return false;
 	}

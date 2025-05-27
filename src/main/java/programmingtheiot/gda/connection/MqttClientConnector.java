@@ -30,7 +30,13 @@ import programmingtheiot.common.ResourceNameEnum;
 import java.io.File;
 import javax.net.ssl.SSLSocketFactory;
 import org.eclipse.paho.client.mqttv3.IMqttMessageListener;
+import org.eclipse.paho.client.mqttv3.MqttAsyncClient;
+
 import programmingtheiot.common.SimpleCertManagementUtil;
+import programmingtheiot.data.ActuatorData;
+import programmingtheiot.data.DataUtil;
+import programmingtheiot.data.SensorData;
+import programmingtheiot.data.SystemPerformanceData;
 
 /**
  * Shell representation of class for student implementation.
@@ -45,7 +51,7 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended
 
 	private boolean useAsyncClient = false;
 
-	private MqttClient           mqttClient = null;
+	//private MqttClient           mqttClient = null;
 	private MqttConnectOptions   connOpts = null;
 	private MemoryPersistence    persistence = null;
 	private IDataMessageListener dataMsgListener = null;
@@ -61,6 +67,8 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended
 	private boolean enableEncryption = false; 
 	private boolean useCleanSession = false; 
 	private boolean enableAutoReconnect = true;  
+
+	private MqttAsyncClient mqttClient = null;
 
 	// params
 	
@@ -86,22 +94,21 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended
 	{
 		try {
 			if (this.mqttClient == null) {
-				this.mqttClient = new MqttClient(this.brokerAddr, this.clientID, this.persistence);
+				// Instancia del cliente asincrónico
+				this.mqttClient = new MqttAsyncClient(this.brokerAddr, this.clientID, this.persistence);
 				this.mqttClient.setCallback(this);
 			}
-	
-			if (! this.mqttClient.isConnected()) {
-				_Logger.info("MQTT client connecting to broker: " + this.brokerAddr);
+
+			if (!this.mqttClient.isConnected()) {
+				_Logger.info("Conectando MQTT client al broker: " + this.brokerAddr);
 				this.mqttClient.connect(this.connOpts);
 				return true;
 			} else {
-				_Logger.warning("MQTT client already connected to broker: " + this.brokerAddr);
+				_Logger.warning("Ya está conectado al broker: " + this.brokerAddr);
 			}
 		} catch (MqttException e) {
-			// TODO: handle this exception
-			_Logger.log(Level.SEVERE, "Failed to connect MQTT client to broker.", e);
+			_Logger.log(Level.SEVERE, "Error al conectar el cliente MQTT", e);
 		}
-	
 		return false;
 	}
 
@@ -124,30 +131,85 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended
 		}
 	
 		return false;
+		
 	}
 
 	public boolean isConnected()
 	{
-		return false;
+		return (this.mqttClient != null && this.mqttClient.isConnected());
 	}
 	
 	@Override
 	public boolean publishMessage(ResourceNameEnum topicName, String msg, int qos)
 	{
-		_Logger.info("publishMessage was called");
+
+		// TODO: determine how verbose your logging should be, especially if this method is called often
+		if (topicName == null) {
+			_Logger.warning("Resource is null. Unable to publish message: " + this.brokerAddr);
+			return false;
+		}
+			
+		if (msg == null || msg.length() ==0) {
+			_Logger.warning("Message is null or empty. Unable to publish message: " +this.brokerAddr);
+			return false;
+		}
+			
+		if (qos <0 || qos >2) {
+			qos = ConfigConst.DEFAULT_QOS;
+		}
+			
+		try {
+			byte[]payload = msg.getBytes();
+			MqttMessage mqttMsg = new MqttMessage(payload);
+			mqttMsg.setQos(qos);
+			this.mqttClient.publish(topicName.getResourceName(), mqttMsg);
+			return true;
+		} catch (Exception e) {
+			_Logger.log(Level.SEVERE,"Failed to publish message to topic: " + topicName,e);
+		}
+		
 		return false;
 	}
 
 	@Override
 	public boolean subscribeToTopic(ResourceNameEnum topicName, int qos)
 	{
-		_Logger.info("subscribeToTopic was called");
+	if (topicName == null) {
+				_Logger.warning("Resource is null. Unable to subscribe to topic: " + this.brokerAddr);
+				return false;
+			}
+				
+			if (qos <0 || qos >2) {
+				qos =ConfigConst.DEFAULT_QOS;
+			}
+				
+			try {
+				this.mqttClient.subscribe(topicName.getResourceName(), qos);
+				_Logger.info("Successfully subscribed to topic: " + topicName.getResourceName());
+				return true;
+			} catch (Exception e) {
+				_Logger.log(Level.SEVERE,"Failed to subscribe to topic: " + topicName, e);
+			}
+
 		return false;
 	}
 
 	@Override
 	public boolean unsubscribeFromTopic(ResourceNameEnum topicName)
 	{
+		if (topicName == null) {
+			_Logger.warning("Resource is null. Unable to unsubscribe from topic: " + this.brokerAddr);
+			return false;
+		}
+			
+		try {
+			this.mqttClient.unsubscribe(topicName.getResourceName());
+			_Logger.info("Successfully unsubscribed from topic: " + topicName.getResourceName());
+			return true;
+		} catch (Exception e) {
+			_Logger.log(Level.SEVERE,"Failed to unsubscribe from topic: " + topicName, e);
+		}
+
 		return false;
 	}
 
@@ -173,7 +235,14 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended
 	@Override
 	public void connectComplete(boolean reconnect, String serverURI)
 	{
-		_Logger.info("MQTT connection successful (is reconnect = " + reconnect + "). Broker: " + serverURI);
+		_Logger.info("Conexión exitosa con MQTT. Broker: " + serverURI);
+		int qos = 1;
+
+		// Suscripción a los tres tópicos
+		this.subscribeToTopic(ResourceNameEnum.CDA_ACTUATOR_RESPONSE_RESOURCE, qos);
+		this.subscribeToTopic(ResourceNameEnum.CDA_SENSOR_MSG_RESOURCE, qos);
+		this.subscribeToTopic(ResourceNameEnum.CDA_SYSTEM_PERF_MSG_RESOURCE, qos);
+
 	}
 
 	@Override
@@ -192,11 +261,25 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended
 	@Override
 	public void messageArrived(String topic, MqttMessage msg) throws Exception
 	{
-		_Logger.info("MQTT message arrived on topic: '" + topic + "'");
+		// Asegurarse de que el mensaje es válido
+		String payload = new String(msg.getPayload());
+		_Logger.info("Mensaje recibido en el tema: " + topic);
+
+		// Verificar el tema y redirigir al método correspondiente
+		if (topic.equals(ResourceNameEnum.CDA_ACTUATOR_RESPONSE_RESOURCE.getResourceName())) {
+			messageArrivedActuatorData(topic, msg);
+		} else if (topic.equals(ResourceNameEnum.CDA_SENSOR_MSG_RESOURCE.getResourceName())) {
+			messageArrivedSensorData(topic, msg);
+		} else if (topic.equals(ResourceNameEnum.CDA_SYSTEM_PERF_MSG_RESOURCE.getResourceName())) {
+			messageArrivedSystemPerformanceData(topic, msg);
+		} else {
+			_Logger.warning("Tema desconocido recibido: " + topic);
+		}
 
 	}
 
 	
+
 	// private methods
 	
 	/**
@@ -300,6 +383,65 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended
 		} catch (Exception e) {
 			_Logger.log(Level.SEVERE, "Failed to initialize secure MQTT connection. Using insecure connection.", e);
 			this.enableEncryption = false;
+		}
+	}
+	
+	private void messageArrivedActuatorData(String topic, MqttMessage msg) throws Exception
+	{
+		String payload = new String(msg.getPayload());
+		_Logger.info("Mensaje recibido en el tema: " + topic);
+
+		try {
+			// Procesar el mensaje como ActuatorData
+			ActuatorData actuatorData = DataUtil.getInstance().jsonToActuatorData(payload);
+			_Logger.info("Recibido ActuatorData: " + actuatorData.getValue());
+
+			// Llamar al listener de ActuatorData
+			if (this.dataMsgListener != null) {
+				this.dataMsgListener.handleActuatorCommandResponse(ResourceNameEnum.CDA_ACTUATOR_RESPONSE_RESOURCE, actuatorData);
+			}
+		} catch (Exception e) {
+			_Logger.warning("Error al procesar ActuatorData: " + e.getMessage());
+		}
+	}
+
+	
+	private void messageArrivedSensorData(String topic, MqttMessage msg) throws Exception
+	{
+		String payload = new String(msg.getPayload());
+		_Logger.info("Mensaje recibido en el tema: " + topic);
+
+		try {
+			// Procesar el mensaje como SensorData
+			SensorData sensorData = DataUtil.getInstance().jsonToSensorData(payload);
+			_Logger.info("Recibido SensorData: " + sensorData.getValue());
+
+			// Llamar al listener de SensorData
+			if (this.dataMsgListener != null) {
+				this.dataMsgListener.handleSensorMessage(ResourceNameEnum.CDA_SENSOR_MSG_RESOURCE, sensorData);
+			}
+		} catch (Exception e) {
+			_Logger.warning("Error al procesar SensorData: " + e.getMessage());
+		}
+	}
+
+	
+	private void messageArrivedSystemPerformanceData(String topic, MqttMessage msg) throws Exception
+	{
+		String payload = new String(msg.getPayload());
+		_Logger.info("Mensaje recibido en el tema: " + topic);
+
+		try {
+			// Procesar el mensaje como SystemPerformanceData
+			SystemPerformanceData systemPerformanceData = DataUtil.getInstance().jsonToSystemPerformanceData(payload);
+			//_Logger.info("Recibido SystemPerformanceData: " + systemPerformanceData.getValue());
+
+			// Llamar al listener de SystemPerformanceData
+			if (this.dataMsgListener != null) {
+				this.dataMsgListener.handleSystemPerformanceMessage(ResourceNameEnum.CDA_SYSTEM_PERF_MSG_RESOURCE, systemPerformanceData);
+			}
+		} catch (Exception e) {
+			_Logger.warning("Error al procesar SystemPerformanceData: " + e.getMessage());
 		}
 	}
 }

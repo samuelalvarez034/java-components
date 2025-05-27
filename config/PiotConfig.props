@@ -48,7 +48,7 @@ defaultQoS     = 0
 keepAlive      = 60
 enableAuth     = False
 enableCrypt    = False
-useAsyncClient = False
+useAsyncClient = True
 
 #
 # CoAP client and server configuration information

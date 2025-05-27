@@ -21,6 +21,9 @@ import programmingtheiot.common.ConfigConst;
 import programmingtheiot.common.ConfigUtil;
 import programmingtheiot.common.IDataMessageListener;
 import programmingtheiot.common.ResourceNameEnum;
+import programmingtheiot.data.ActuatorData;
+import programmingtheiot.data.DataUtil;
+import programmingtheiot.data.SensorData;
 import programmingtheiot.gda.connection.*;
 
 /**
@@ -82,7 +85,7 @@ public class MqttClientConnectorTest
 		assertFalse(this.mqttClient.connectClient());
 		
 		try {
-			Thread.sleep(delay);
+			Thread.sleep(delay*100);
 		} catch (Exception e) {
 			// ignore
 		}
@@ -235,5 +238,89 @@ public class MqttClientConnectorTest
 		
 		assertTrue(this.mqttClient.disconnectClient());
 	}
+
+	@Test
+	public void testActuatorCommandResponseSubscription()
+	{
+		int qos = 0;
+
+		assertTrue(this.mqttClient.connectClient());
+
+		try {
+			Thread.sleep(2000);
+		} catch (Exception e) {
+			// ignore
+		}
+
+		ActuatorData ad = new ActuatorData();
+		ad.setValue((float) 12.3);
+		ad.setAsResponse();
+
+		String adJson = DataUtil.getInstance().actuatorDataToJson(ad);
+
+		assertTrue(this.mqttClient.publishMessage(ResourceNameEnum.CDA_ACTUATOR_RESPONSE_RESOURCE, adJson, qos));
+
+		try {
+			Thread.sleep(2000);
+		} catch (Exception e) {
+			// ignore
+		}
+
+		assertTrue(this.mqttClient.disconnectClient());
+
+		try {
+			Thread.sleep(2000);
+		} catch (Exception e) {
+			// ignore
+		}
+	}
+
+    // Maximo numero de pruebas (10,000 solicitudes)
+    public static final int MAX_TEST_RUNS = 10000;
+
+    // Test de publicación con QoS 0
+    @Test
+    public void testPublishQoS0() {
+        execTestPublish(MAX_TEST_RUNS, 0);
+    }
+
+    // Test de publicación con QoS 1
+    @Test
+    public void testPublishQoS1() {
+        execTestPublish(MAX_TEST_RUNS, 1);
+    }
+
+    // Test de publicación con QoS 2
+    @Test
+    public void testPublishQoS2() {
+        execTestPublish(MAX_TEST_RUNS, 2);
+    }
+
+    // Función para ejecutar los tests de publicación
+    private void execTestPublish(int maxTestRuns, int qos) {
+        // Conectar el cliente MQTT
+        assertTrue(this.mqttClient.connectClient());
+
+        // Crear un objeto de datos para la publicación
+        SensorData sensorData = new SensorData();
+        String payload = DataUtil.getInstance().sensorDataToJson(sensorData);
+
+        long startMillis = System.currentTimeMillis();
+
+        // Realizar las publicaciones en el ciclo
+        for (int sequenceNo = 0; sequenceNo < maxTestRuns; sequenceNo++) {
+            // Publicar el mensaje en el tópico
+            this.mqttClient.publishMessage(ResourceNameEnum.CDA_MGMT_STATUS_CMD_RESOURCE, payload, qos);
+        }
+
+        long endMillis = System.currentTimeMillis();
+        long elapsedMillis = endMillis - startMillis;
+
+        // Desconectar el cliente después de la prueba
+        assertTrue(this.mqttClient.disconnectClient());
+
+        // Imprimir el tiempo total que tomó realizar las publicaciones
+        System.out.println("Publish message - QoS " + qos + " [" + maxTestRuns + "]: " + elapsedMillis + " ms");
+    }
 	
 }

@@ -25,6 +25,7 @@ import programmingtheiot.data.SystemPerformanceData;
 
 import programmingtheiot.gda.connection.CloudClientConnector;
 import programmingtheiot.gda.connection.CoapServerGateway;
+import programmingtheiot.gda.connection.ICloudClient;
 import programmingtheiot.gda.connection.IPersistenceClient;
 import programmingtheiot.gda.connection.IPubSubClient;
 import programmingtheiot.gda.connection.IRequestResponseClient;
@@ -56,7 +57,7 @@ public class DeviceDataManager implements IDataMessageListener
 	
 	private IActuatorDataListener actuatorDataListener = null;
 	private IPubSubClient mqttClient = null;
-	private IPubSubClient cloudClient = null;
+	private ICloudClient cloudClient = null;
 	private IPersistenceClient persistenceClient = null;
 	private IRequestResponseClient smtpClient = null;
 	private CoapServerGateway coapServer = null;
@@ -76,7 +77,6 @@ public class DeviceDataManager implements IDataMessageListener
 	private OffsetDateTime latestHumiditySensorTimeStamp = null;
 	private int lastKnownHumidifierCommand = ConfigConst.OFF_COMMAND;
 
-	
 	// constructors
 	
 	public DeviceDataManager()
@@ -115,6 +115,10 @@ public class DeviceDataManager implements IDataMessageListener
 		this.triggerHumidifierCeiling =
 			configUtil.getFloat(ConfigConst.GATEWAY_DEVICE, "triggerHumidifierCeiling");
 
+		if (enableCloudClient) {
+    		this.cloudClient = new CloudClientConnector();
+		}
+		
 		initManager();
 		initConnections();
 	}
@@ -155,7 +159,32 @@ public class DeviceDataManager implements IDataMessageListener
 	@Override
 	public boolean handleActuatorCommandRequest(ResourceNameEnum resourceName, ActuatorData data)
 	{
-		return false;
+		if (data != null) {
+			// NOTE: Feel free to update this log message for debugging and monitoring
+			_Logger.log(
+				Level.FINE,
+				"Actuator request received: {0}. Message: {1}",
+				new Object[] {resourceName.getResourceName(), Integer.valueOf((data.getCommand()))});
+
+			if (data.hasError()) {
+				_Logger.warning("Error flag set for ActuatorData instance.");
+			}
+
+			// TODO: retrieve this from config file
+			int qos = ConfigConst.DEFAULT_QOS;
+
+			// TODO: you may want to implement some analysis logic here or
+			// in a separate method to determine how best to handle incoming
+			// ActuatorData before calling this.sendActuatorCommandtoCda()
+
+			// Recall that this private method was implement in Lab Module 10
+			// See PIOT-GDA-10-003 for details
+			this.sendActuatorCommandToCda(resourceName, data);
+
+			return true;
+		} else {
+			return false;
+		}
 	}
 
 	@Override
@@ -177,21 +206,34 @@ public class DeviceDataManager implements IDataMessageListener
 			_Logger.fine("Handling sensor message: " + data.getName());
 
 			if (data.hasError()) {
-				_Logger.warning("SensorData has error flag.");
+				_Logger.warning("Error flag set for SensorData instance.");
 			}
 
 			String jsonData = DataUtil.getInstance().sensorDataToJson(data);
 
+			_Logger.fine("JSON [SensorData] -> " + jsonData);
+
+			// TODO: retrieve this from config file
+			int qos = ConfigConst.DEFAULT_QOS;
+
+			// NOTE: Your code may not have a persistenceClient reference or
+			// a enablePersistenceClient boolean
 			if (this.enablePersistenceClient && this.persistenceClient != null) {
-				this.persistenceClient.storeData(resourceName.getResourceName(), ConfigConst.DEFAULT_QOS, data);
+				this.persistenceClient.storeData(resourceName.getResourceName(), qos, data);
 			}
 
-			this.handleIncomingDataAnalysis(resourceName, data);
+			if (this.cloudClient != null) {
+				this.cloudClient.sendEdgeDataToCloud(resourceName, data);
+			}
 
+
+			this.handleIncomingDataAnalysis(resourceName, data);
+			
 			return true;
+		} else {
+			return false;
 		}
 
-		return false;
 	}
 
 	@Override
@@ -203,6 +245,18 @@ public class DeviceDataManager implements IDataMessageListener
 			if (data.hasError()) {
 				_Logger.warning("Error flag set for SystemPerformanceData instance.");
 			}
+
+			// TODO: retrieve this from config file
+			int qos = ConfigConst.DEFAULT_QOS;
+
+			// NOTE: You may want to persist your SystemPerformanceData here
+
+			// NOTE: You may want to also analyze the SystemPerformanceData here
+
+			if (this.cloudClient != null) {
+				this.cloudClient.sendEdgeDataToCloud(resourceName, data);
+			}
+
 
 			return true;
 		} else {
@@ -260,6 +314,11 @@ public class DeviceDataManager implements IDataMessageListener
 				_Logger.severe("Failed to start CoAP server. Check log file for details.");
 			}
 		}
+
+		if (this.cloudClient != null) {
+			this.cloudClient.connectClient();
+		}
+
 	}
 	
 	public void stopManager()
@@ -299,6 +358,11 @@ public class DeviceDataManager implements IDataMessageListener
 				_Logger.severe("Failed to stop CoAP server. Check log file for details.");
 			}
 		}
+
+		if (this.cloudClient != null) {
+			this.cloudClient.disconnectClient();
+		}
+
 	}
 
 	
@@ -334,7 +398,7 @@ public class DeviceDataManager implements IDataMessageListener
 	}
 
 	if (this.enableCloudClient) {
-		// TODO: implement this in Lab Module 10
+		this.cloudClient = new CloudClientConnector();
 	}
 
 	if (this.enablePersistenceClient) {
@@ -451,7 +515,6 @@ public class DeviceDataManager implements IDataMessageListener
 			}
 		}
 	}
-
 
 
 }

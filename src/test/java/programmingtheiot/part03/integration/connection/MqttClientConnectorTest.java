@@ -82,7 +82,7 @@ public class MqttClientConnectorTest
 		assertFalse(this.mqttClient.connectClient());
 		
 		try {
-			Thread.sleep(delay * 1000 + 5000);
+			Thread.sleep(delay);
 		} catch (Exception e) {
 			// ignore
 		}

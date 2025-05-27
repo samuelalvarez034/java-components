@@ -80,3 +80,9 @@ enableSystemPerformance = False
 testGdaDataPath         = /tmp/gda-data
 testCdaDataPath         = /tmp/cda-data
 testEmptyApp            = False
+handleHumidityChangeOnDevice = True
+humidityMaxTimePastThreshold = 2
+nominalHumiditySetting = 40.0
+triggerHumidifierFloor = 30.0
+triggerHumidifierCeiling = 50.0
+

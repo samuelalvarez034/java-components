@@ -8,6 +8,7 @@
 
 package programmingtheiot.gda.app;
 
+import java.time.OffsetDateTime;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -60,6 +61,21 @@ public class DeviceDataManager implements IDataMessageListener
 	private IRequestResponseClient smtpClient = null;
 	private CoapServerGateway coapServer = null;
 	private SystemPerformanceManager sysPerfMgr = null;
+
+	// Configuración de umbrales
+	private boolean handleHumidityChangeOnDevice = false;
+	private long humidityMaxTimePastThreshold = 300;
+	private float nominalHumiditySetting = 40.0f;
+	private float triggerHumidifierFloor = 30.0f;
+	private float triggerHumidifierCeiling = 50.0f;
+
+	// Seguimiento de estado
+	private ActuatorData latestHumidifierActuatorData = null;
+	private ActuatorData latestHumidifierActuatorResponse = null;
+	private SensorData latestHumiditySensorData = null;
+	private OffsetDateTime latestHumiditySensorTimeStamp = null;
+	private int lastKnownHumidifierCommand = ConfigConst.OFF_COMMAND;
+
 	
 	// constructors
 	
@@ -83,6 +99,21 @@ public class DeviceDataManager implements IDataMessageListener
 		this.enablePersistenceClient =
 			configUtil.getBoolean(
 				ConfigConst.GATEWAY_DEVICE, ConfigConst.ENABLE_PERSISTENCE_CLIENT_KEY);
+
+		this.handleHumidityChangeOnDevice =
+			configUtil.getBoolean(ConfigConst.GATEWAY_DEVICE, "handleHumidityChangeOnDevice");
+
+		this.humidityMaxTimePastThreshold =
+			configUtil.getInteger(ConfigConst.GATEWAY_DEVICE, "humidityMaxTimePastThreshold");
+
+		this.nominalHumiditySetting =
+			configUtil.getFloat(ConfigConst.GATEWAY_DEVICE, "nominalHumiditySetting");
+
+		this.triggerHumidifierFloor =
+			configUtil.getFloat(ConfigConst.GATEWAY_DEVICE, "triggerHumidifierFloor");
+
+		this.triggerHumidifierCeiling =
+			configUtil.getFloat(ConfigConst.GATEWAY_DEVICE, "triggerHumidifierCeiling");
 
 		initManager();
 		initConnections();
@@ -142,17 +173,25 @@ public class DeviceDataManager implements IDataMessageListener
 	@Override
 	public boolean handleSensorMessage(ResourceNameEnum resourceName, SensorData data)
 	{
-		if (data != null) {
-			_Logger.info("Handling sensor message: " + data.getName());
-	
+		 if (data != null) {
+			_Logger.fine("Handling sensor message: " + data.getName());
+
 			if (data.hasError()) {
-				_Logger.warning("Error flag set for SensorData instance.");
+				_Logger.warning("SensorData has error flag.");
 			}
-	
+
+			String jsonData = DataUtil.getInstance().sensorDataToJson(data);
+
+			if (this.enablePersistenceClient && this.persistenceClient != null) {
+				this.persistenceClient.storeData(resourceName.getResourceName(), ConfigConst.DEFAULT_QOS, data);
+			}
+
+			this.handleIncomingDataAnalysis(resourceName, data);
+
 			return true;
-		} else {
-			return false;
 		}
+
+		return false;
 	}
 
 	@Override
@@ -318,5 +357,101 @@ public class DeviceDataManager implements IDataMessageListener
 				this.actuatorDataListener.onActuatorDataUpdate(data);
 			}
 		}
+		
 	}
+
+	private void handleIncomingDataAnalysis(ResourceNameEnum resource, SensorData data)
+	{
+		if (data.getTypeID() == ConfigConst.HUMIDITY_SENSOR_TYPE) {
+			handleHumiditySensorAnalysis(resource, data);
+		}
+	}
+
+	private void handleHumiditySensorAnalysis(ResourceNameEnum resource, SensorData data)
+	{
+		_Logger.fine("Analizando humedad: " + data.getValue());
+
+		boolean isLow = data.getValue() < this.triggerHumidifierFloor;
+		boolean isHigh = data.getValue() > this.triggerHumidifierCeiling;
+
+		if (isLow || isHigh) {
+			if (this.latestHumiditySensorData == null) {
+				this.latestHumiditySensorData = data;
+				this.latestHumiditySensorTimeStamp = getDateTimeFromData(data);
+				return;
+			} else {
+				OffsetDateTime currentTs = getDateTimeFromData(data);
+				long diffSeconds = java.time.Duration.between(this.latestHumiditySensorTimeStamp, currentTs).getSeconds();
+
+				if (diffSeconds >= this.humidityMaxTimePastThreshold) {
+					ActuatorData ad = new ActuatorData();
+					ad.setName(ConfigConst.HUMIDIFIER_ACTUATOR_NAME);
+					ad.setTypeID(ConfigConst.HUMIDIFIER_ACTUATOR_TYPE);
+					ad.setLocationID(data.getLocationID());
+					ad.setValue(this.nominalHumiditySetting);
+
+					if (isLow) {
+						ad.setCommand(ConfigConst.ON_COMMAND);
+					} else {
+						ad.setCommand(ConfigConst.OFF_COMMAND);
+					}
+
+					this.lastKnownHumidifierCommand = ad.getCommand();
+
+					_Logger.info("Enviando comando al CDA: " + ad);
+					sendActuatorCommandToCda(ResourceNameEnum.CDA_ACTUATOR_CMD_RESOURCE, ad);
+
+					this.latestHumidifierActuatorData = ad;
+					this.latestHumiditySensorData = null;
+					this.latestHumiditySensorTimeStamp = null;
+				}
+			}
+		} else if (this.lastKnownHumidifierCommand == ConfigConst.ON_COMMAND) {
+			if (data.getValue() >= this.nominalHumiditySetting) {
+				ActuatorData ad = new ActuatorData();
+				ad.setCommand(ConfigConst.OFF_COMMAND);
+				ad.setName(ConfigConst.HUMIDIFIER_ACTUATOR_NAME);
+				ad.setTypeID(ConfigConst.HUMIDIFIER_ACTUATOR_TYPE);
+				ad.setLocationID(data.getLocationID());
+				ad.setValue(this.nominalHumiditySetting);
+
+				_Logger.info("Apagando humidificador: " + ad);
+				sendActuatorCommandToCda(ResourceNameEnum.CDA_ACTUATOR_CMD_RESOURCE, ad);
+
+				this.latestHumidifierActuatorData = null;
+				this.latestHumiditySensorData = null;
+				this.latestHumiditySensorTimeStamp = null;
+			}
+		}
+	}
+
+	private OffsetDateTime getDateTimeFromData(SensorData data)
+	{
+		try {
+			return OffsetDateTime.parse(data.getTimeStamp());
+		} catch (Exception e) {
+			_Logger.warning("Error al analizar el timestasendActuatorCommandToCdamp. Usando hora actual.");
+			return OffsetDateTime.now();
+		}
+	}
+
+	private void sendActuatorCommandToCda(ResourceNameEnum resource, ActuatorData data)
+	{
+		if (this.actuatorDataListener != null) {
+			this.actuatorDataListener.onActuatorDataUpdate(data);
+		}
+
+		if (this.enableMqttClient && this.mqttClient != null) {
+			String jsonData = DataUtil.getInstance().actuatorDataToJson(data);
+
+			if (this.mqttClient.publishMessage(resource, jsonData, ConfigConst.DEFAULT_QOS)) {
+				_Logger.info("ActuatorData enviado a CDA: " + data.getCommand());
+			} else {
+				_Logger.warning("Fallo al enviar ActuatorData a CDA.");
+			}
+		}
+	}
+
+
+
 }

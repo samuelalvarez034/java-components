@@ -94,7 +94,7 @@ public class MqttClientConnectorTest
 	/**
 	 * Test method for {@link programmingtheiot.gda.connection.MqttClientConnector#publishMessage(programmingtheiot.common.ResourceNameEnum, java.lang.String, int)}.
 	 */
-//	@Test
+	@Test
 	public void testPublishAndSubscribe()
 	{
 		int qos = 0;

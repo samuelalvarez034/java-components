@@ -45,8 +45,8 @@ public class DeviceDataManager implements IDataMessageListener
 	
 	// private var's
 	
-	private boolean enableMqttClient = true;
-	private boolean enableCoapServer = false;
+	private boolean enableMqttClient = false;
+	private boolean enableCoapServer = true;
 	private boolean enableCloudClient = false;
 	private boolean enableSmtpClient = false;
 	private boolean enablePersistenceClient = false;

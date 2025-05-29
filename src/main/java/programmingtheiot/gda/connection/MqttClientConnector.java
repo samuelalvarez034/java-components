@@ -66,7 +66,8 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 	private boolean useCleanSession = false;
 	private boolean enableAutoReconnect = true;
 
-	private MqttAsyncClient mqttClient = null;
+	private MqttClient mqttClient = null;
+	private MqttAsyncClient mqttAsyncClient = null;
 
 	private IConnectionListener connListener = null;
 	private boolean useCloudGatewayConfig = false;
@@ -106,21 +107,39 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 	@Override
 	public boolean connectClient() {
 		try {
-			if (this.mqttClient == null) {
-				// Instancia del cliente asincrónico
-				this.mqttClient = new MqttAsyncClient(this.brokerAddr, this.clientID, this.persistence);
-				this.mqttClient.setCallback(this);
-			}
+			if (this.useAsyncClient) {
 
-			if (!this.mqttClient.isConnected()) {
-				_Logger.info("Conectando MQTT client al broker: " + this.brokerAddr);
-				this.mqttClient.connect(this.connOpts);
-				return true;
+				// Asynchronous client
+				if (this.mqttAsyncClient == null) {
+					this.mqttAsyncClient = new MqttAsyncClient(this.brokerAddr, this.clientID, this.persistence);
+					this.mqttAsyncClient.setCallback(this);
+				}
+				// Asynchronous client connection
+				if (!this.mqttAsyncClient.isConnected()) {
+					_Logger.info("MQTT ASYNC client CONNECTING to broker: " + this.brokerAddr);
+					this.mqttAsyncClient.connect(this.connOpts);
+
+					return true;
+				} else {
+					_Logger.warning("MQTT ASYNC client already connected to broker: " + brokerAddr);
+				}
 			} else {
-				_Logger.warning("Ya está conectado al broker: " + this.brokerAddr);
+				// Synchronous client
+				if (this.mqttClient == null) {
+					this.mqttClient = new MqttClient(this.brokerAddr, this.clientID, this.persistence);
+					this.mqttClient.setCallback(this);
+				}
+				// Synchronous client connection
+				if (!mqttClient.isConnected()) {
+					_Logger.info("MQTT SYNC client CONNECTING to broker: " + this.brokerAddr);
+					this.mqttClient.connect(this.connOpts);
+					return true;
+				} else {
+					_Logger.warning("MQTT SYNC client already connected to broker: " + this.brokerAddr);
+				}
 			}
 		} catch (MqttException e) {
-			_Logger.log(Level.SEVERE, "Error al intentar conectar el cliente MQTT", e);
+			_Logger.log(Level.SEVERE, "FAILED to connect MQTT client to broker.", e);
 		}
 		return false;
 	}
@@ -128,51 +147,139 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 	@Override
 	public boolean disconnectClient() {
 		try {
-			if (this.mqttClient != null) {
-				if (this.mqttClient.isConnected()) {
-					_Logger.info("Disconnecting MQTT client from broker: " + this.brokerAddr);
-					this.mqttClient.disconnect();
-					return true;
-				} else {
-					_Logger.warning("MQTT client not connected to broker: " + this.brokerAddr);
+			if (this.useAsyncClient) {
+
+				// Asynchronous client
+				if (this.mqttAsyncClient != null) {
+					if (this.mqttAsyncClient.isConnected()) { // with asynchronous client connected proceed to
+																// disconnect
+						_Logger.info("DISCONNECTING MQTT ASYNC client from broker: " + this.brokerAddr);
+						this.mqttAsyncClient.disconnect();
+						return true;
+					} else {
+						_Logger.warning("MQTT ASYNC client NOT CONNECTED to broker: " + this.brokerAddr);
+					}
 				}
+				return false;
+
+			} else {
+
+				// Synchronous client
+				if (this.mqttClient != null) {
+					if (this.mqttClient.isConnected()) { // with synchronous client connected proceed to disconnect
+						_Logger.info("DISCONNECTING MQTT SYNC client from broker: " + this.brokerAddr);
+						this.mqttClient.disconnect();
+						return true;
+					} else {
+						_Logger.warning("MQTT SYNC client NOT CONNECTED to broker: " + this.brokerAddr);
+					}
+				}
+				return false;
 			}
 		} catch (Exception e) {
-			// TODO: handle this exception
-			_Logger.log(Level.SEVERE, "Failed to disconnect MQTT client from broker: " + this.brokerAddr, e);
+			_Logger.log(Level.SEVERE, "FAILED to disconnect MQTT SYNC client from broker: " + this.brokerAddr, e);
+			return false;
 		}
-
-		return false;
-
 	}
 
 	public boolean isConnected() {
-		return (this.mqttClient != null && this.mqttClient.isConnected());
+		if (this.useAsyncClient) {
+
+			// Aynchronous client will connect (with value True) only complying with these
+			// requirements
+			return this.mqttAsyncClient != null && this.mqttAsyncClient instanceof MqttAsyncClient
+					&& this.mqttAsyncClient.isConnected();
+
+		} else {
+
+			// Synchronous client will connect (with value True) only complying with these
+			// requirements
+			return this.mqttClient != null && this.mqttClient instanceof MqttClient && this.mqttClient.isConnected();
+		}
 	}
 
 	@Override
 	public boolean publishMessage(ResourceNameEnum topicName, String msg, int qos) {
+		// Validate that the topic is not null
 		if (topicName == null) {
-			_Logger.warning("Resource is null. Unable to publish message: " + this.brokerAddr);
+			_Logger.warning("ERROR!: Resource is null. Unable to publish message on broker: " + this.brokerAddr);
 			return false;
 		}
 
-		if (msg == null || msg.length() == 0) {
-			_Logger.warning("Message is null or empty. Unable to publish message: " + this.brokerAddr);
+		// Check that the message is not null or empty
+		if (msg == null || msg.trim().isEmpty()) {
+			_Logger.warning("ERROR!: Message is null or empty. Publishing aborted on broker: " + this.brokerAddr);
 			return false;
 		}
 
-		return publishMessage(topicName.getResourceName(), msg.getBytes(), qos);
+		// Validate QoS value
+		if (qos < 0 || qos > 2) {
+			_Logger.warning("WARNING!: Invalid QoS value (" + qos + ") detected. Using default QoS: "
+					+ ConfigConst.DEFAULT_QOS);
+			qos = ConfigConst.DEFAULT_QOS;
+		}
+
+		try {
+			// In many MQTT modules, it is necessary to convert the message into a byte
+			// array for proper transmission.
+			byte[] payload = msg.getBytes();
+			MqttMessage mqttMsg = new MqttMessage(payload);
+			mqttMsg.setQos(qos);
+
+			// Publish the message on the given topic depending using or not asynchronous
+			// client
+			if (this.useAsyncClient) {
+
+				this.mqttAsyncClient.publish(topicName.getResourceName(), mqttMsg);
+
+			} else {
+
+				this.mqttClient.publish(topicName.getResourceName(), mqttMsg);
+
+			}
+			return true;
+
+		} catch (Exception e) {
+			_Logger.log(Level.SEVERE, "Exception while publishing message on topic: " + topicName + ". Details: ", e);
+		}
+
+		return false;
 	}
 
 	@Override
 	public boolean subscribeToTopic(ResourceNameEnum topicName, int qos) {
+		// Validate that the topic is not null
 		if (topicName == null) {
-			_Logger.warning("Resource is null. Unable to subscribe to topic: " + this.brokerAddr);
+			_Logger.warning("Error!: Resource is null. Unable to subscribe to topic");
 			return false;
 		}
 
-		return subscribeToTopic(topicName.getResourceName(), qos);
+		// Validate QoS value
+		if (qos < 0 || qos > 2) {
+			_Logger.warning("Warning!: Invalid QoS value (" + qos + ") detected. Using default QoS: "
+					+ ConfigConst.DEFAULT_QOS);
+			qos = ConfigConst.DEFAULT_QOS;
+		}
+
+		try {
+
+			if (this.useAsyncClient) {
+
+				this.mqttAsyncClient.subscribe(topicName.getResourceName(), qos);
+				_Logger.info("Congrats! ASYNC Client successfully subscribed to topic: " + topicName.getResourceName());
+
+			} else {
+
+				this.mqttClient.subscribe(topicName.getResourceName(), qos);
+				_Logger.info("Congrats! SYNC Client successfully subscribed to topic: " + topicName.getResourceName());
+
+			}
+			return true;
+
+		} catch (Exception e) {
+			_Logger.log(Level.SEVERE, "ERROR! FAILED to subscribe to topic: " + topicName, e);
+		}
+		return false;
 	}
 
 	@Override
@@ -182,7 +289,26 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 			return false;
 		}
 
-		return unsubscribeFromTopic(topicName.getResourceName());
+		try {
+			if (this.useAsyncClient) {
+
+				this.mqttAsyncClient.unsubscribe(topicName.getResourceName());
+				_Logger.info(
+						"CONGRATS! ASYNC Client successfully unsubscribed from topic: " + topicName.getResourceName());
+
+			} else {
+
+				this.mqttClient.unsubscribe(topicName.getResourceName());
+				_Logger.info(
+						"CONGRATS! SYNC Client successfully unsubscribed from topic: " + topicName.getResourceName());
+
+			}
+			return true;
+
+		} catch (Exception e) {
+			_Logger.log(Level.SEVERE, "ERROR! FAILED to unsubscribe from topic: " + topicName, e);
+		}
+		return false;
 	}
 
 	@Override

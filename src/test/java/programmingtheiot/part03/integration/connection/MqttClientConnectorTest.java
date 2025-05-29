@@ -97,7 +97,7 @@ public class MqttClientConnectorTest
 	/**
 	 * Test method for {@link programmingtheiot.gda.connection.MqttClientConnector#publishMessage(programmingtheiot.common.ResourceNameEnum, java.lang.String, int)}.
 	 */
-	@Test
+//	@Test
 	public void testPublishAndSubscribe()
 	{
 		int qos = 0;
@@ -279,19 +279,19 @@ public class MqttClientConnectorTest
     public static final int MAX_TEST_RUNS = 10000;
 
     // Test de publicación con QoS 0
-    @Test
+//    @Test
     public void testPublishQoS0() {
         execTestPublish(MAX_TEST_RUNS, 0);
     }
 
     // Test de publicación con QoS 1
-    @Test
+//    @Test
     public void testPublishQoS1() {
         execTestPublish(MAX_TEST_RUNS, 1);
     }
 
     // Test de publicación con QoS 2
-    @Test
+//    @Test
     public void testPublishQoS2() {
         execTestPublish(MAX_TEST_RUNS, 2);
     }

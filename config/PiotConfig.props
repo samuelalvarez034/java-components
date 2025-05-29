@@ -47,7 +47,7 @@ securePort     = 8883
 defaultQoS     = 0
 keepAlive      = 60
 enableAuth     = False
-enableCrypt    = False
+enableCrypt    = True
 useAsyncClient = True
 
 #
@@ -76,7 +76,7 @@ enableCoapClient        = False
 enableCloudClient       = False
 enableSmtpClient        = False
 enablePersistenceClient = False
-enableSystemPerformance = False
+enableSystemPerformance = True
 testGdaDataPath         = /tmp/gda-data
 testCdaDataPath         = /tmp/cda-data
 testEmptyApp            = False

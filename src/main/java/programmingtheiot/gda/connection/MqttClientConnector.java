@@ -212,38 +212,7 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 			return false;
 		}
 
-		// Validate QoS value
-		if (qos < 0 || qos > 2) {
-			_Logger.warning("WARNING!: Invalid QoS value (" + qos + ") detected. Using default QoS: "
-					+ ConfigConst.DEFAULT_QOS);
-			qos = ConfigConst.DEFAULT_QOS;
-		}
-
-		try {
-			// In many MQTT modules, it is necessary to convert the message into a byte
-			// array for proper transmission.
-			byte[] payload = msg.getBytes();
-			MqttMessage mqttMsg = new MqttMessage(payload);
-			mqttMsg.setQos(qos);
-
-			// Publish the message on the given topic depending using or not asynchronous
-			// client
-			if (this.useAsyncClient) {
-
-				this.mqttAsyncClient.publish(topicName.getResourceName(), mqttMsg);
-
-			} else {
-
-				this.mqttClient.publish(topicName.getResourceName(), mqttMsg);
-
-			}
-			return true;
-
-		} catch (Exception e) {
-			_Logger.log(Level.SEVERE, "Exception while publishing message on topic: " + topicName + ". Details: ", e);
-		}
-
-		return false;
+		return publishMessage(topicName.getResourceName(), msg.getBytes(), qos);
 	}
 
 	@Override
@@ -261,25 +230,8 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 			qos = ConfigConst.DEFAULT_QOS;
 		}
 
-		try {
+		return subscribeToTopic(topicName.getResourceName(), qos);
 
-			if (this.useAsyncClient) {
-
-				this.mqttAsyncClient.subscribe(topicName.getResourceName(), qos);
-				_Logger.info("Congrats! ASYNC Client successfully subscribed to topic: " + topicName.getResourceName());
-
-			} else {
-
-				this.mqttClient.subscribe(topicName.getResourceName(), qos);
-				_Logger.info("Congrats! SYNC Client successfully subscribed to topic: " + topicName.getResourceName());
-
-			}
-			return true;
-
-		} catch (Exception e) {
-			_Logger.log(Level.SEVERE, "ERROR! FAILED to subscribe to topic: " + topicName, e);
-		}
-		return false;
 	}
 
 	@Override
@@ -289,26 +241,8 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 			return false;
 		}
 
-		try {
-			if (this.useAsyncClient) {
-
-				this.mqttAsyncClient.unsubscribe(topicName.getResourceName());
-				_Logger.info(
-						"CONGRATS! ASYNC Client successfully unsubscribed from topic: " + topicName.getResourceName());
-
-			} else {
-
-				this.mqttClient.unsubscribe(topicName.getResourceName());
-				_Logger.info(
-						"CONGRATS! SYNC Client successfully unsubscribed from topic: " + topicName.getResourceName());
-
-			}
-			return true;
-
-		} catch (Exception e) {
-			_Logger.log(Level.SEVERE, "ERROR! FAILED to unsubscribe from topic: " + topicName, e);
-		}
-		return false;
+    return unsubscribeFromTopic(topicName.getResourceName());
+		
 	}
 
 	@Override
@@ -570,7 +504,15 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 			mqttMsg.setQos(qos);
 			mqttMsg.setPayload(payload);
 
-			this.mqttClient.publish(topicName, mqttMsg);
+			if (this.useAsyncClient) {
+
+				this.mqttAsyncClient.publish(topicName, mqttMsg);
+
+			} else {
+
+				this.mqttClient.publish(topicName, mqttMsg);
+
+			}
 			return true;
 		} catch (Exception e) {
 			_Logger.log(Level.SEVERE, "Failed to publish message to topic: " + topicName, e);
@@ -602,11 +544,34 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 
 		try {
 			if (listener != null) {
-				this.mqttClient.subscribe(topicName, qos, listener);
+				if (this.useAsyncClient) {
+
+					this.mqttAsyncClient.subscribe(topicName, qos, listener);
+					_Logger.info(
+							"Congrats! ASYNC Client successfully subscribed to topic: " + topicName);
+
+				} else {
+
+					this.mqttClient.subscribe(topicName, qos, listener);
+					_Logger.info(
+							"Congrats! SYNC Client successfully subscribed to topic: " + topicName);
+
+				}
 				_Logger.info("Successfully subscribed to topic with listener: " + topicName);
 			} else {
-				this.mqttClient.subscribe(topicName, qos);
-				_Logger.info("Successfully subscribed to topic: " + topicName);
+				if (this.useAsyncClient) {
+
+					this.mqttAsyncClient.subscribe(topicName, qos);
+					_Logger.info(
+							"Congrats! ASYNC Client successfully subscribed to topic: " + topicName);
+
+				} else {
+
+					this.mqttClient.subscribe(topicName, qos);
+					_Logger.info(
+							"Congrats! SYNC Client successfully subscribed to topic: " + topicName);
+
+				}
 			}
 			return true;
 		} catch (Exception e) {
@@ -623,7 +588,19 @@ public class MqttClientConnector implements IPubSubClient, MqttCallbackExtended 
 		}
 
 		try {
-			this.mqttClient.unsubscribe(topicName);
+			if (this.useAsyncClient) {
+
+				this.mqttAsyncClient.unsubscribe(topicName);
+				_Logger.info(
+						"CONGRATS! ASYNC Client successfully unsubscribed from topic: " + topicName);
+
+			} else {
+
+				this.mqttClient.unsubscribe(topicName);
+				_Logger.info(
+						"CONGRATS! SYNC Client successfully unsubscribed from topic: " + topicName);
+
+			}
 			_Logger.info("Successfully unsubscribed from topic: " + topicName);
 			return true;
 		} catch (Exception e) {
